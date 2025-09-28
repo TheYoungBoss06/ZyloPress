@@ -1,56 +1,18 @@
-// Build script - Prepare for production deployment
-import fs from 'fs';
-import path from 'path';
+// ZyloPress Build Script - Native Zylo
+import { logger } from '../zylopress/utils.zylo'
 
-const buildDir = 'dist';
+func build() {
+  logger.info('Starting ZyloPress build...')
 
-console.log('Building ZyloPress for production...');
+  // Compile Zylo files (assuming zylo compiler)
+  zylo.compile('./zylopress', './dist')
+  zylo.compile('./example', './dist/example')
+  zylo.compile('./tests', './dist/tests')
 
-// Create dist directory
-if (!fs.existsSync(buildDir)) {
-  fs.mkdirSync(buildDir);
+  // Copy static files
+  zylo.fs.copy('./README.md', './dist/README.md')
+
+  logger.info('ZyloPress build completed successfully')
 }
 
-// Copy main files
-const filesToCopy = [
-  'zylopress/zylopress.zylo',
-  'zylopress/router.zylo',
-  'zylopress/middleware.zylo',
-  'zylopress/utils.zylo',
-  'zylopress/security/jwt.zylo',
-  'zylopress/security/bcrypt.zylo',
-  'zylopress/db/pool.zylo',
-  'example/server.zylo'
-];
-
-filesToCopy.forEach(file => {
-  const dest = path.join(buildDir, path.basename(file));
-  fs.copyFileSync(file, dest);
-  console.log(`Copied ${file} to ${dest}`);
-});
-
-// Create production config
-const prodConfig = `
-// Production configuration
-export const config = {
-  env: 'production',
-  port: process.env.PORT || 3000,
-  db: {
-    host: process.env.DB_HOST || 'localhost',
-    port: process.env.DB_PORT || 5432,
-    database: process.env.DB_NAME || 'zylo_app',
-    user: process.env.DB_USER || 'zylo_user',
-    password: process.env.DB_PASSWORD || 'secure_password'
-  },
-  jwt: {
-    secret: process.env.JWT_SECRET || 'production_secret_key'
-  }
-};
-`;
-
-fs.writeFileSync(path.join(buildDir, 'config.zylo'), prodConfig);
-console.log('Created production config');
-
-console.log('Build completed successfully!');
-console.log(`Production files are in ${buildDir}/ directory`);
-console.log('Run with: zpm start dist/server.zylo --instances max --port 3000 --env production');
+build()

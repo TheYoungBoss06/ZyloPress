@@ -1,43 +1,36 @@
 // ZyloPress MySQL Driver
-import mysql from 'mysql2/promise';
+import { logger } from '../../utils.zylo'
 
-class MySQLDriver implements DBDriver {
-  var pool: Any = null
+class MySQLDriver {
+  var connection: Any = null
+  var config: Map
 
   func connect(config: Map) -> Void {
-    var poolConfig = {
-      host: config.DB_HOST || 'localhost',
-      port: config.DB_PORT || 3306,
-      database: config.DB_NAME || 'zylo_app',
-      user: config.DB_USER || 'zylo_user',
-      password: config.DB_PASSWORD || 'secure_password',
-      connectionLimit: config.MAX_POOL || 20,
-      acquireTimeout: 60000,
-      timeout: 60000
-    }
-
-    this.pool = mysql.createPool(poolConfig)
-    logger.info("Connected to MySQL database: " + config.DB_NAME)
+    this.config = config
+    this.connection = zylo.db.mysql.connect({
+      host: config.DB_HOST,
+      port: config.DB_PORT,
+      database: config.DB_NAME,
+      user: config.DB_USER,
+      password: config.DB_PASSWORD
+    })
+    logger.info('Connected to MySQL database')
   }
 
-  func query(sql: String, params: List<Any>) -> List<Any> {
-    if (!this.pool) {
-      throw Error("Database not connected")
-    }
-
-    var [rows] = await this.pool.execute(sql, params)
-    return rows
+  func query(sql: String, params: List<Any>) -> List<Map> {
+    return this.connection.query(sql, params)
   }
 
   func close() -> Void {
-    if (this.pool) {
-      await this.pool.end()
-      this.pool = null
-      logger.info("MySQL connection closed")
+    if (this.connection) {
+      this.connection.close()
+      logger.info('MySQL connection closed')
     }
   }
 
   func getName() -> String {
-    return "MySQL"
+    return 'MySQL'
   }
 }
+
+export default MySQLDriver

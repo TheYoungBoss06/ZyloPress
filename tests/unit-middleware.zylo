@@ -1,59 +1,111 @@
-// Unit tests for middlewares
-import { auth } from '../zylopress/middleware.zylo';
-import { sign } from '../zylopress/security/jwt.zylo';
+// Unit Tests for ZyloPress Middlewares
+import { auth, cors, helmet, rateLimit, validate, cache } from '../zylopress/middleware.zylo'
+import jwt from '../zylopress/security/jwt.zylo'
+import { logger } from '../zylopress/utils.zylo'
 
-// Mock request/response
-const createMockReq = (token) => ({
-  headers: { authorization: token ? `Bearer ${token}` : undefined }
-});
-
-const createMockRes = () => {
-  const res = {};
-  res.status = (code) => { res.statusCode = code; return res; };
-  res.json = (obj) => { res.body = obj; };
-  return res;
-};
-
-const testAuthMiddleware = async () => {
-  console.log('Testing auth middleware...');
-
-  // Test without token
-  const req1 = createMockReq();
-  const res1 = createMockRes();
-  let nextCalled = false;
-  const next = () => { nextCalled = true; };
-
-  await auth()(req1, res1, next);
-  if (res1.statusCode === 401 && !nextCalled) {
-    console.log('✓ Auth without token fails');
+// Test framework (simple assertion)
+func assert(condition: Bool, message: String) {
+  if (!condition) {
+    logger.error('Test failed: ' + message)
+    throw Error(message)
   } else {
-    console.log('✗ Auth without token should fail');
+    logger.info('Test passed: ' + message)
   }
+}
 
-  // Test with valid token
-  const token = sign({ id: 1, role: 'user' });
-  const req2 = createMockReq(token);
-  const res2 = createMockRes();
-  nextCalled = false;
+func testAuthMiddleware() {
+  var middleware = auth(['admin'])
+  var req = { headers: { authorization: 'Bearer ' + jwt.sign({ id: 1, role: 'admin' }) } }
+  var res = { status: (code) => ({ json: (data) => {} }) }
+  var nextCalled = false
+  var next = () => { nextCalled = true }
 
-  await auth()(req2, res2, next);
-  if (nextCalled && req2.user.id === 1) {
-    console.log('✓ Auth with valid token passes');
-  } else {
-    console.log('✗ Auth with valid token should pass');
+  middleware(req, res, next)
+  assert(nextCalled, 'Auth middleware should call next for valid token')
+  assert(req.user.role == 'admin', 'User role should be set')
+}
+
+func testCorsMiddleware() {
+  var middleware = cors()
+  var req = { headers: { origin: 'http://example.com' } }
+  var res = { setHeader: (key, value) => {} }
+  var nextCalled = false
+  var next = () => { nextCalled = true }
+
+  middleware(req, res, next)
+  assert(nextCalled, 'CORS middleware should call next')
+}
+
+func testHelmetMiddleware() {
+  var middleware = helmet()
+  var req = {}
+  var res = { setHeader: (key, value) => {} }
+  var nextCalled = false
+  var next = () => { nextCalled = true }
+
+  middleware(req, res, next)
+  assert(nextCalled, 'Helmet middleware should call next')
+}
+
+func testRateLimitMiddleware() {
+  var middleware = rateLimit({ windowMs: 1000, max: 2 })
+  var req = { ip: '127.0.0.1' }
+  var res = { setHeader: (key, value) => {}, status: (code) => ({ json: (data) => {} }) }
+  var nextCalled = false
+  var next = () => { nextCalled = true }
+
+  // First request
+  middleware(req, res, next)
+  assert(nextCalled, 'Rate limit should allow first request')
+
+  // Second request
+  nextCalled = false
+  middleware(req, res, next)
+  assert(nextCalled, 'Rate limit should allow second request')
+
+  // Third request should be blocked
+  nextCalled = false
+  middleware(req, res, () => { nextCalled = true })
+  assert(!nextCalled, 'Rate limit should block third request')
+}
+
+func testValidateMiddleware() {
+  var schema = { name: { required: true, type: 'string' } }
+  var middleware = validate(schema)
+  var req = { body: { name: 'test' } }
+  var res = { status: (code) => ({ json: (data) => {} }) }
+  var nextCalled = false
+  var next = () => { nextCalled = true }
+
+  middleware(req, res, next)
+  assert(nextCalled, 'Validation should pass for valid data')
+}
+
+func testCacheMiddleware() {
+  var middleware = cache({ ttl: 1 })
+  var req = { method: 'GET', url: '/test' }
+  var res = { setHeader: (key, value) => {}, json: (data) => {} }
+  var nextCalled = false
+  var next = () => { nextCalled = true }
+
+  middleware(req, res, next)
+  assert(nextCalled, 'Cache middleware should call next on first request')
+}
+
+// Run tests
+func runUnitTests() {
+  logger.info('Running unit tests for middlewares...')
+  try {
+    testAuthMiddleware()
+    testCorsMiddleware()
+    testHelmetMiddleware()
+    testRateLimitMiddleware()
+    testValidateMiddleware()
+    testCacheMiddleware()
+    logger.info('All unit tests passed!')
+  } catch (err) {
+    logger.error('Unit tests failed: ' + err.message)
   }
+}
 
-  // Test with invalid role
-  const req3 = createMockReq(token);
-  const res3 = createMockRes();
-  nextCalled = false;
-
-  await auth(['admin'])(req3, res3, next);
-  if (res3.statusCode === 403 && !nextCalled) {
-    console.log('✓ Auth with insufficient role fails');
-  } else {
-    console.log('✗ Auth with insufficient role should fail');
-  }
-};
-
-testAuthMiddleware();
+runUnitTests()

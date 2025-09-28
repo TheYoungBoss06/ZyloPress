@@ -1,38 +1,46 @@
-// ZyloPress JWT Security Module
-import crypto from 'crypto';
+// ZyloPress JWT Security Module - Native Zylo
+var secret = zylo.env.get('JWT_SECRET') || 'zylo_default_secret'
 
-const secret = process.env.JWT_SECRET || 'default_secret';
+func sign(payload: Map, options: Map = {}) -> String {
+  var header = { alg: 'HS256', typ: 'JWT' }
+  var now = zylo.time.unix()
+  var exp = options.expiresIn ? now + options.expiresIn : now + 3600  // default 1h
+  var fullPayload = { ...payload, iat: now, exp: exp }
 
-const sign = (payload, expiresIn = '1h') => {
-  const header = { alg: 'HS256', typ: 'JWT' };
-  const now = Math.floor(Date.now() / 1000);
-  const exp = now + (expiresIn === '1h' ? 3600 : 86400); // simple, assume '1h' or '24h'
-  const fullPayload = { ...payload, iat: now, exp };
+  var encodedHeader = zylo.base64url.encode(zylo.json.stringify(header))
+  var encodedPayload = zylo.base64url.encode(zylo.json.stringify(fullPayload))
 
-  const encodedHeader = Buffer.from(JSON.stringify(header)).toString('base64url');
-  const encodedPayload = Buffer.from(JSON.stringify(fullPayload)).toString('base64url');
+  var data = encodedHeader + '.' + encodedPayload
+  var signature = zylo.crypto.hmac.sha256(data, secret).base64url()
 
-  const data = `${encodedHeader}.${encodedPayload}`;
-  const signature = crypto.createHmac('sha256', secret).update(data).digest('base64url');
+  return data + '.' + signature
+}
 
-  return `${data}.${signature}`;
-};
+func verify(token: String) -> Map {
+  var parts = token.split('.')
+  if (parts.length != 3) {
+    throw Error('Invalid token format')
+  }
 
-const verify = (token) => {
-  const parts = token.split('.');
-  if (parts.length !== 3) throw new Error('Invalid token');
+  var encodedHeader = parts[0]
+  var encodedPayload = parts[1]
+  var signature = parts[2]
 
-  const [encodedHeader, encodedPayload, signature] = parts;
-  const data = `${encodedHeader}.${encodedPayload}`;
-  const expectedSignature = crypto.createHmac('sha256', secret).update(data).digest('base64url');
+  var data = encodedHeader + '.' + encodedPayload
+  var expectedSignature = zylo.crypto.hmac.sha256(data, secret).base64url()
 
-  if (signature !== expectedSignature) throw new Error('Invalid signature');
+  if (signature != expectedSignature) {
+    throw Error('Invalid signature')
+  }
 
-  const payload = JSON.parse(Buffer.from(encodedPayload, 'base64url').toString());
-  const now = Math.floor(Date.now() / 1000);
-  if (payload.exp < now) throw new Error('Token expired');
+  var payload = zylo.json.parse(zylo.base64url.decode(encodedPayload))
+  var now = zylo.time.unix()
 
-  return payload;
-};
+  if (payload.exp && payload.exp < now) {
+    throw Error('Token expired')
+  }
 
-export { sign, verify };
+  return payload
+}
+
+export { sign, verify }

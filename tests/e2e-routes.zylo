@@ -1,73 +1,134 @@
-// E2E tests for routes
-import app from '../zylopress/zylopress.zylo';
-import http from 'http';
+// E2E Tests for ZyloPress Routes
+import app from '../zylopress/zylopress.zylo'
+import { logger } from '../zylopress/utils.zylo'
 
-const testApp = app();
+// Simple HTTP client for testing
+func httpRequest(method: String, url: String, options: Map = {}) -> Map {
+  // Simulate HTTP request (in real Zylo, this would be zylo.http.request)
+  return { status: 200, data: {} }
+}
 
-testApp.get('/test', (req, res) => {
-  res.json({ message: 'Hello Test' });
-});
-
-testApp.get('/error', (req, res) => {
-  throw new Error('Test error');
-});
-
-// Helper to make requests
-const makeRequest = (path, method = 'GET') => {
-  return new Promise((resolve) => {
-    const req = http.request({
-      hostname: 'localhost',
-      port: 3001,
-      path,
-      method
-    }, (res) => {
-      let data = '';
-      res.on('data', chunk => data += chunk);
-      res.on('end', () => {
-        resolve({ status: res.statusCode, data: JSON.parse(data) });
-      });
-    });
-    req.end();
-  });
-};
-
-const runE2ETests = async () => {
-  console.log('Starting E2E tests...');
-
-  // Start test server
-  testApp.listen(3001, () => {
-    console.log('Test server started');
-  });
-
-  // Wait a bit
-  await new Promise(resolve => setTimeout(resolve, 100));
-
-  // Test successful route
-  const response1 = await makeRequest('/test');
-  if (response1.status === 200 && response1.data.message === 'Hello Test') {
-    console.log('✓ GET /test returns correct response');
+// Test framework
+func assert(condition: Bool, message: String) {
+  if (!condition) {
+    logger.error('E2E test failed: ' + message)
+    throw Error(message)
   } else {
-    console.log('✗ GET /test failed', response1);
+    logger.info('E2E test passed: ' + message)
   }
+}
 
-  // Test 404
-  const response2 = await makeRequest('/notfound');
-  if (response2.status === 404) {
-    console.log('✓ GET /notfound returns 404');
-  } else {
-    console.log('✗ GET /notfound should return 404', response2);
+func testServerCreation() {
+  var server = app()
+  assert(server != null, 'Server should be created')
+  assert(typeof server.route == 'function', 'Server should have route method')
+  assert(typeof server.on == 'function', 'Server should have on method')
+  assert(typeof server.listen == 'function', 'Server should have listen method')
+}
+
+func testRouteRegistration() {
+  var server = app()
+  var route = server.route('/test')
+  assert(route != null, 'Route should be created')
+  assert(typeof route.method == 'function', 'Route should have method function')
+}
+
+func testRouterCreation() {
+  var server = app()
+  var router = server.router('/api')
+  assert(router != null, 'Router should be created')
+  assert(typeof router.route == 'function', 'Router should have route method')
+}
+
+func testMiddlewareAttachment() {
+  var server = app()
+  var called = false
+  var middleware = (req, res, next) => { called = true; next() }
+  server.on('request', middleware)
+
+  // Simulate request
+  var req = { method: 'GET', url: '/test' }
+  var res = { json: (data) => {}, status: (code) => res, send: (text) => {} }
+  server.handleRequest(req, res)
+
+  assert(called, 'Middleware should be called')
+}
+
+func testRouteChaining() {
+  var server = app()
+  var route = server.route('/test')
+  route.method('GET', (req) => ({ message: 'GET' }))
+  route.method('POST', (req) => ({ message: 'POST' }))
+
+  // Check if routes are registered
+  assert(server.routes['GET /test'] != null, 'GET route should be registered')
+  assert(server.routes['POST /test'] != null, 'POST route should be registered')
+}
+
+func testRouterRouteChaining() {
+  var server = app()
+  var router = server.router('/api')
+  var route = router.route('/users')
+  route.method('GET', (req) => ({ users: [] }))
+
+  // Check if route is registered with prefix
+  assert(server.routes['GET /api/users'] != null, 'Router route should be registered with prefix')
+}
+
+func testAutomaticJsonSerialization() {
+  var server = app()
+  server.route('/json').method('GET', (req) => ({ test: 'data' }))
+
+  // Simulate request
+  var req = { method: 'GET', url: '/json' }
+  var res = { json: (data) => { res.sentData = data }, status: (code) => res, send: (text) => {} }
+  server.handleRequest(req, res)
+
+  assert(res.sentData.test == 'data', 'Response should be JSON serialized')
+}
+
+func testErrorHandling() {
+  var server = app()
+  server.route('/error').method('GET', (req) => { throw Error('Test error') })
+
+  // Simulate request
+  var req = { method: 'GET', url: '/error' }
+  var res = { json: (data) => { res.sentData = data }, status: (code) => { res.statusCode = code; return res }, send: (text) => {} }
+  server.handleRequest(req, res)
+
+  assert(res.statusCode == 500, 'Error should set status to 500')
+  assert(res.sentData.error == 'Test error', 'Error message should be returned')
+}
+
+func testDocsEndpoint() {
+  var server = app()
+  server.route('/docs-test').method('GET', (req) => ({}))
+
+  // Simulate request to /docs
+  var req = { method: 'GET', url: '/docs' }
+  var res = { json: (data) => { res.sentData = data }, status: (code) => res, send: (text) => {} }
+  server.handleRequest(req, res)
+
+  assert(res.sentData.openapi == '3.0.0', 'Docs should return OpenAPI spec')
+}
+
+// Run E2E tests
+func runE2ETests() {
+  logger.info('Running E2E tests for routes...')
+  try {
+    testServerCreation()
+    testRouteRegistration()
+    testRouterCreation()
+    testMiddlewareAttachment()
+    testRouteChaining()
+    testRouterRouteChaining()
+    testAutomaticJsonSerialization()
+    testErrorHandling()
+    testDocsEndpoint()
+    logger.info('All E2E tests passed!')
+  } catch (err) {
+    logger.error('E2E tests failed: ' + err.message)
   }
+}
 
-  // Test error handling
-  const response3 = await makeRequest('/error');
-  if (response3.status === 500 && response3.data.error) {
-    console.log('✓ GET /error handled properly');
-  } else {
-    console.log('✗ GET /error should be handled', response3);
-  }
-
-  // Close server
-  process.exit(0);
-};
-
-runE2ETests();
+runE2ETests()

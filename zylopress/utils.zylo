@@ -1,66 +1,84 @@
-// ZyloPress Utils Module
+// ZyloPress Utils Module - Native Zylo
 
 // Logger
-const logger = {
-  info: (msg) => console.log(`[INFO] ${new Date().toISOString()}: ${msg}`),
-  error: (msg) => console.error(`[ERROR] ${new Date().toISOString()}: ${msg}`),
-  warn: (msg) => console.warn(`[WARN] ${new Date().toISOString()}: ${msg}`),
-};
+var logger = {
+  info: (msg: String) => zylo.console.log('[INFO] ' + zylo.time.iso() + ': ' + msg),
+  error: (msg: String) => zylo.console.error('[ERROR] ' + zylo.time.iso() + ': ' + msg),
+  warn: (msg: String) => zylo.console.warn('[WARN] ' + zylo.time.iso() + ': ' + msg),
+  debug: (msg: String) => zylo.console.log('[DEBUG] ' + zylo.time.iso() + ': ' + msg)
+}
 
-// Simple Validator (since validator is imported, but implement basic)
-const validate = (data, rules) => {
-  const errors = [];
-  for (const [field, rule] of Object.entries(rules)) {
+// Validation function
+func validate(data: Map, rules: Map) -> Map {
+  var errors = []
+  for (field in rules.keys()) {
+    var rule = rules[field]
     if (rule.required && !data[field]) {
-      errors.push(`${field} is required`);
+      errors.push(field + ' is required')
     }
-    if (rule.type && typeof data[field] !== rule.type) {
-      errors.push(`${field} must be ${rule.type}`);
+    if (rule.type && typeof data[field] != rule.type) {
+      errors.push(field + ' must be ' + rule.type)
     }
     if (rule.minLength && data[field].length < rule.minLength) {
-      errors.push(`${field} must be at least ${rule.minLength} characters`);
+      errors.push(field + ' must be at least ' + rule.minLength + ' characters')
+    }
+    if (rule.maxLength && data[field].length > rule.maxLength) {
+      errors.push(field + ' must be at most ' + rule.maxLength + ' characters')
+    }
+    if (rule.pattern && !rule.pattern.test(data[field])) {
+      errors.push(field + ' format is invalid')
     }
   }
-  return { isValid: errors.length === 0, errors };
-};
+  return { isValid: errors.length == 0, errors: errors }
+}
 
 // HAST Helpers for generating safe HTML
-const escapeHtml = (text) => {
+func escapeHtml(text: String) -> String {
   return text.replace(/[&<>"']/g, (char) => {
-    const map = { '&': '&', '<': '<', '>': '>', '"': '"', "'": ''' };
-    return map[char];
-  });
-};
+    switch char {
+      case '&': return '&'
+      case '<': return '<'
+      case '>': return '>'
+      case '"': return '"'
+      case "'": return '''
+      default: return char
+    }
+  })
+}
 
-const h = (tag, attrs = {}, children = []) => {
-  const attrStr = Object.entries(attrs).map(([k, v]) => ` ${k}="${escapeHtml(v)}"`).join('');
-  const childStr = children.map(c => typeof c === 'string' ? escapeHtml(c) : c).join('');
-  return `<${tag}${attrStr}>${childStr}</${tag}>`;
-};
+func h(tag: String, attrs: Map = {}, children: List = []) -> String {
+  var attrStr = attrs.keys().map(k => ' ' + k + '="' + escapeHtml(attrs[k]) + '"').join('')
+  var childStr = children.map(c => typeof c == 'string' ? escapeHtml(c) : c).join('')
+  return '<' + tag + attrStr + '>' + childStr + '</' + tag + '>'
+}
 
-const div = (attrs, children) => h('div', attrs, children);
-const p = (attrs, children) => h('p', attrs, children);
-const span = (attrs, children) => h('span', attrs, children);
+func div(attrs: Map, children: List) -> String { return h('div', attrs, children) }
+func p(attrs: Map, children: List) -> String { return h('p', attrs, children) }
+func span(attrs: Map, children: List) -> String { return h('span', attrs, children) }
 
 // Generate API documentation
-const generateDocs = (app) => {
-  const docs = {
+func generateDocs(routes: Map) -> Map {
+  var docs = {
     openapi: '3.0.0',
     info: { title: 'ZyloPress API', version: '1.0.0' },
     paths: {}
-  };
+  }
 
-  Object.keys(app.routes).forEach(routeKey => {
-    const [method, path] = routeKey.split(' ');
-    if (!docs.paths[path]) docs.paths[path] = {};
-    docs.paths[path][method.toLowerCase()] = {
+  for (routeKey in routes.keys()) {
+    var parts = routeKey.split(' ')
+    var method = parts[0].toLowerCase()
+    var path = parts[1]
+    if (!docs.paths[path]) {
+      docs.paths[path] = {}
+    }
+    docs.paths[path][method] = {
       responses: {
         200: { description: 'Success' }
       }
-    };
-  });
+    }
+  }
 
-  return docs;
-};
+  return docs
+}
 
-export { logger, validate, h, div, p, span, generateDocs };
+export { logger, validate, h, div, p, span, generateDocs }

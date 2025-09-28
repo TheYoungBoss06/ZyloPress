@@ -1,38 +1,30 @@
 // ZyloPress SQLite Driver
-import sqlite3 from 'sqlite3';
-import { open } from 'sqlite';
+import { logger } from '../../utils.zylo'
 
-class SQLiteDriver implements DBDriver {
-  var db: Any = null
+class SQLiteDriver {
+  var connection: Any = null
+  var config: Map
 
   func connect(config: Map) -> Void {
-    var dbPath = config.DB_PATH || './database.sqlite'
-
-    this.db = await open({
-      filename: dbPath,
-      driver: sqlite3.Database
-    })
-
-    logger.info("Connected to SQLite database: " + dbPath)
+    this.config = config
+    this.connection = zylo.db.sqlite.connect(config.DB_PATH)
+    logger.info('Connected to SQLite database')
   }
 
-  func query(sql: String, params: List<Any>) -> List<Any> {
-    if (!this.db) {
-      throw Error("Database not connected")
-    }
-
-    return await this.db.all(sql, params)
+  func query(sql: String, params: List<Any>) -> List<Map> {
+    return this.connection.query(sql, params)
   }
 
   func close() -> Void {
-    if (this.db) {
-      await this.db.close()
-      this.db = null
-      logger.info("SQLite connection closed")
+    if (this.connection) {
+      this.connection.close()
+      logger.info('SQLite connection closed')
     }
   }
 
   func getName() -> String {
-    return "SQLite"
+    return 'SQLite'
   }
 }
+
+export default SQLiteDriver

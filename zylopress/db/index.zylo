@@ -1,20 +1,169 @@
-// ZyloPress Database Module - Main Export
-// Agnostic database support for multiple engines
-
-import { DBPool, createDatabase, defaultConfig } from './pool.zylo';
-import { DBConfig, configs } from './config.zylo';
+// ZyloPress Database Module - Main Export with ORM-like API
+import { DBPool, createDatabase, defaultConfig } from './pool.zylo'
+import { DBConfig, configs } from './config.zylo'
+import { logger } from '../utils.zylo'
 
 // Create default database instance
 var db = createDatabase(defaultConfig)
 
-// Export everything needed for database operations
-export {
-  db,                    // Default database instance
-  DBPool,               // Database pool class
-  createDatabase,       // Factory function for custom databases
-  DBConfig,            // Configuration class
-  configs,             // Predefined configurations
-  defaultConfig        // Default configuration
+// Query Builder for fluent API
+class QueryBuilder {
+  var table: String
+  var selectFields: List<String> = []
+  var whereConditions: List<Map> = []
+  var limitValue: Int = -1
+  var offsetValue: Int = 0
+  var orderByField: String = ''
+  var orderDirection: String = 'ASC'
+  var insertData: Map = null
+  var updateData: Map = null
+  var deleteFlag: Bool = false
+
+  func init(table: String) {
+    this.table = table
+  }
+
+  func select(fields: String) -> QueryBuilder {
+    this.selectFields = fields == '*' ? ['*'] : fields.split(',').map(f => f.trim())
+    return this
+  }
+
+  func where(field: String, value: Any) -> QueryBuilder {
+    this.whereConditions.push({ field: field, value: value, operator: '=' })
+    return this
+  }
+
+  func whereOp(field: String, operator: String, value: Any) -> QueryBuilder {
+    this.whereConditions.push({ field: field, value: value, operator: operator })
+    return this
+  }
+
+  func limit(n: Int) -> QueryBuilder {
+    this.limitValue = n
+    return this
+  }
+
+  func offset(n: Int) -> QueryBuilder {
+    this.offsetValue = n
+    return this
+  }
+
+  func orderBy(field: String, direction: String = 'ASC') -> QueryBuilder {
+    this.orderByField = field
+    this.orderDirection = direction
+    return this
+  }
+
+  func insert(data: Map) -> QueryBuilder {
+    this.insertData = data
+    return this
+  }
+
+  func update(data: Map) -> QueryBuilder {
+    this.updateData = data
+    return this
+  }
+
+  func delete() -> QueryBuilder {
+    this.deleteFlag = true
+    return this
+  }
+
+  func execute() -> Any {
+    if (this.insertData) {
+      return this.executeInsert()
+    } else if (this.updateData) {
+      return this.executeUpdate()
+    } else if (this.deleteFlag) {
+      return this.executeDelete()
+    } else {
+      return this.executeSelect()
+    }
+  }
+
+  func executeSelect() -> List<Map> {
+    var sql = 'SELECT ' + (this.selectFields.length > 0 ? this.selectFields.join(', ') : '*') + ' FROM ' + this.table
+    var params = []
+
+    if (this.whereConditions.length > 0) {
+      sql += ' WHERE '
+      var conditions = []
+      for (cond in this.whereConditions) {
+        conditions.push(cond.field + ' ' + cond.operator + ' ?')
+        params.push(cond.value)
+      }
+      sql += conditions.join(' AND ')
+    }
+
+    if (this.orderByField) {
+      sql += ' ORDER BY ' + this.orderByField + ' ' + this.orderDirection
+    }
+
+    if (this.limitValue > 0) {
+      sql += ' LIMIT ' + this.limitValue
+    }
+
+    if (this.offsetValue > 0) {
+      sql += ' OFFSET ' + this.offsetValue
+    }
+
+    return db.query(sql, params)
+  }
+
+  func executeInsert() -> Map {
+    var fields = this.insertData.keys()
+    var placeholders = fields.map(f => '?').join(', ')
+    var sql = 'INSERT INTO ' + this.table + ' (' + fields.join(', ') + ') VALUES (' + placeholders + ')'
+    var params = fields.map(f => this.insertData[f])
+
+    db.query(sql, params)
+    return { inserted: true }
+  }
+
+  func executeUpdate() -> Map {
+    var fields = this.updateData.keys()
+    var setClause = fields.map(f => f + ' = ?').join(', ')
+    var sql = 'UPDATE ' + this.table + ' SET ' + setClause
+    var params = fields.map(f => this.updateData[f])
+
+    if (this.whereConditions.length > 0) {
+      sql += ' WHERE '
+      var conditions = []
+      for (cond in this.whereConditions) {
+        conditions.push(cond.field + ' ' + cond.operator + ' ?')
+        params.push(cond.value)
+      }
+      sql += conditions.join(' AND ')
+    }
+
+    db.query(sql, params)
+    return { updated: true }
+  }
+
+  func executeDelete() -> Map {
+    var sql = 'DELETE FROM ' + this.table
+    var params = []
+
+    if (this.whereConditions.length > 0) {
+      sql += ' WHERE '
+      var conditions = []
+      for (cond in this.whereConditions) {
+        conditions.push(cond.field + ' ' + cond.operator + ' ?')
+        params.push(cond.value)
+      }
+      sql += conditions.join(' AND ')
+    }
+
+    db.query(sql, params)
+    return { deleted: true }
+  }
+}
+
+// Main db function
+func db(table: String) -> QueryBuilder {
+  var qb = new QueryBuilder()
+  qb.init(table)
+  return qb
 }
 
 // Convenience functions
@@ -26,5 +175,5 @@ func closeDB() -> Void {
   db.close()
 }
 
-// Export for easy importing
+export { db, DBPool, createDatabase, DBConfig, configs, defaultConfig, getDBStats, closeDB }
 export default db

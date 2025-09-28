@@ -1,26 +1,18 @@
-// Test script - Run unit and E2E tests with ZPM
-import { zpm } from 'zpm';
+// ZyloPress Test Script - Native Zylo
+import { logger } from '../zylopress/utils.zylo'
 
-const runTests = async () => {
-  console.log('Running unit tests...');
-  try {
-    await zpm.run('tests/unit-middleware.zylo');
-    console.log('Unit tests passed');
-  } catch (error) {
-    console.error('Unit tests failed:', error.message);
-    process.exit(1);
-  }
+func runTests() {
+  logger.info('Running ZyloPress tests...')
 
-  console.log('Running E2E tests...');
-  try {
-    await zpm.run('tests/e2e-routes.zylo');
-    console.log('E2E tests passed');
-  } catch (error) {
-    console.error('E2E tests failed:', error.message);
-    process.exit(1);
-  }
+  // Run unit tests
+  logger.info('Running unit tests...')
+  zylo.run('./tests/unit-middleware.zylo')
 
-  console.log('All tests passed!');
-};
+  // Run E2E tests
+  logger.info('Running E2E tests...')
+  zylo.run('./tests/e2e-routes.zylo')
 
-runTests();
+  logger.info('All tests completed')
+}
+
+runTests()

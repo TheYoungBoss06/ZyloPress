@@ -1,53 +1,24 @@
-// Lint script - Check Zylo code quality with ZPM
-import { zpm } from 'zpm';
+// ZyloPress Lint Script - Native Zylo
+import { logger } from '../zylopress/utils.zylo'
 
-const lintFile = async (filePath) => {
-  const content = await zpm.fs.readFile(filePath, 'utf8');
-  const errors = [];
+func lint() {
+  logger.info('Linting ZyloPress code...')
 
-  // Basic Zylo checks
-  if (content.includes('console.log') && !filePath.includes('logger')) {
-    errors.push('Avoid console.log, use logger instead');
-  }
+  // Lint Zylo files
+  var files = zylo.fs.glob('./zylopress/**/*.zylo')
+  files.concat(zylo.fs.glob('./example/**/*.zylo'))
+  files.concat(zylo.fs.glob('./tests/**/*.zylo'))
 
-  if (content.includes('throw new Error') && !content.includes('errorHandler')) {
-    errors.push('Use structured error throwing');
-  }
-
-  return errors;
-};
-
-const lintDirectory = async (dir) => {
-  const files = await zpm.fs.readdir(dir);
-  let totalErrors = 0;
-
-  for (const file of files) {
-    const filePath = `${dir}/${file}`;
-    const stat = await zpm.fs.stat(filePath);
-
-    if (stat.isDirectory() && !file.startsWith('.')) {
-      totalErrors += await lintDirectory(filePath);
-    } else if (file.endsWith('.zylo')) {
-      const errors = await lintFile(filePath);
-      if (errors.length > 0) {
-        console.log(`Lint errors in ${filePath}:`);
-        errors.forEach(error => console.log(`  - ${error}`));
-        totalErrors += errors.length;
-      }
+  for (file in files) {
+    var result = zylo.lint(file)
+    if (result.errors.length > 0) {
+      logger.error('Lint errors in ' + file + ': ' + result.errors.join(', '))
+    } else {
+      logger.info('Lint passed for ' + file)
     }
   }
 
-  return totalErrors;
-};
+  logger.info('Linting completed')
+}
 
-const runLint = async () => {
-  const errors = await lintDirectory('zylopress');
-  if (errors === 0) {
-    console.log('Lint passed!');
-  } else {
-    console.log(`Lint failed with ${errors} errors`);
-    process.exit(1);
-  }
-};
-
-runLint();
+lint()

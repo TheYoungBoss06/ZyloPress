@@ -112,15 +112,15 @@ func createDatabase(config: Map) -> DBPool {
 
 // Export singleton instance based on environment
 var defaultConfig = {
-  DB_TYPE: process.env.DB_TYPE || 'postgres',
-  DB_HOST: process.env.DB_HOST || 'localhost',
-  DB_PORT: process.env.DB_PORT || 5432,
-  DB_NAME: process.env.DB_NAME || 'zylo_app',
-  DB_USER: process.env.DB_USER || 'zylo_user',
-  DB_PASSWORD: process.env.DB_PASSWORD || 'secure_password',
-  DB_PATH: process.env.DB_PATH || './database.sqlite',  // For SQLite
-  DB_URI: process.env.DB_URI || 'mongodb://localhost:27017',  // For MongoDB
-  MAX_POOL: process.env.MAX_POOL || 20
+  DB_TYPE: zylo.env.get('DB_TYPE') || 'postgres',
+  DB_HOST: zylo.env.get('DB_HOST') || 'localhost',
+  DB_PORT: zylo.env.get('DB_PORT') || 5432,
+  DB_NAME: zylo.env.get('DB_NAME') || 'zylo_app',
+  DB_USER: zylo.env.get('DB_USER') || 'zylo_user',
+  DB_PASSWORD: zylo.env.get('DB_PASSWORD') || 'secure_password',
+  DB_PATH: zylo.env.get('DB_PATH') || './database.sqlite',  // For SQLite
+  DB_URI: zylo.env.get('DB_URI') || 'mongodb://localhost:27017',  // For MongoDB
+  MAX_POOL: zylo.env.get('MAX_POOL') || 20
 }
 
 export { DBPool, createDatabase, defaultConfig }

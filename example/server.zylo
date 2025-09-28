@@ -1,65 +1,149 @@
-// Example ZyloPress Backend
-import app from '../zylopress/zylopress.zylo';
-import Router from '../zylopress/router.zylo';
-import { auth, validate, corsMiddleware, helmetMiddleware, rateLimitMiddleware } from '../zylopress/middleware.zylo';
-import { jwt } from '../zylopress/security/jwt.zylo';
-import { hash, compare } from '../zylopress/security/bcrypt.zylo';
-import { query } from '../zylopress/db/pool.zylo';
-import { logger } from '../zylopress/utils.zylo';
+// Example ZyloPress Native Backend - Full CRUD and Authentication
+import app from '../zylopress/zylopress.zylo'
+import { auth, cors, helmet, rateLimit, validate, cache } from '../zylopress/middleware.zylo'
+import { logger } from '../zylopress/utils.zylo'
+import db from '../zylopress/db/index.zylo'
+import bcrypt from '../zylopress/security/bcrypt.zylo'
+import jwt from '../zylopress/security/jwt.zylo'
 
-const server = app();
+const server = app()
 
 // Global middlewares
-server.use(corsMiddleware);
-server.use(helmetMiddleware);
-server.use(rateLimitMiddleware);
+server.on('request', cors())
+server.on('request', helmet())
+server.on('request', rateLimit({ windowMs: 60000, max: 100 }))
 
-// Users Router
-const usersRouter = new Router();
+// Authentication routes
+server.route('/api/auth/register')
+  .method('POST', validate({
+    email: { required: true, type: 'string', pattern: /^[^\s@]+@[^\s@]+\.[^\s@]+$/ },
+    password: { required: true, type: 'string', minLength: 6 }
+  }), async (req) => {
+    var { email, password } = req.body
+    var existing = await db('users').where('email', email).execute()
+    if (existing.length > 0) {
+      return { error: 'User already exists', code: 400 }
+    }
+    var hash = await bcrypt.hash(password)
+    await db('users').insert({ email: email, password: hash }).execute()
+    return { message: 'User registered successfully' }
+  })
 
-usersRouter.post('/register', async (req, res) => {
-  const { email, password } = req.body;
-  const hashedPassword = await hash(password);
-  await query('INSERT INTO users (email, password) VALUES ($1, $2)', [email, hashedPassword]);
-  res.json({ message: 'User registered' });
-});
+server.route('/api/auth/login')
+  .method('POST', validate({
+    email: { required: true, type: 'string' },
+    password: { required: true, type: 'string' }
+  }), async (req) => {
+    var { email, password } = req.body
+    var users = await db('users').where('email', email).execute()
+    if (users.length == 0 || !await bcrypt.compare(password, users[0].password)) {
+      return { error: 'Invalid credentials', code: 401 }
+    }
+    var token = jwt.sign({ id: users[0].id, role: users[0].role || 'user' })
+    return { token: token, user: { id: users[0].id, email: users[0].email } }
+  })
 
-usersRouter.post('/login', async (req, res) => {
-  const { email, password } = req.body;
-  const users = await query('SELECT * FROM users WHERE email = $1', [email]);
-  if (users.length && await compare(password, users[0].password)) {
-    const token = jwt.sign({ id: users[0].id, role: 'user' });
-    res.json({ token });
-  } else {
-    res.status(401).json({ error: 'Invalid credentials' });
-  }
-});
+// Users CRUD
+var usersRouter = server.router('/api/users')
 
-usersRouter.get('/profile', auth(), async (req, res) => {
-  const user = await query('SELECT id, email FROM users WHERE id = $1', [req.user.id]);
-  res.json(user[0]);
-});
+usersRouter.route('/')
+  .method('GET', auth(['admin']), cache({ ttl: 300 }), async (req) => {
+    return await db('users').select('id,email,role').execute()
+  })
+  .method('POST', auth(['admin']), validate({
+    email: { required: true, type: 'string' },
+    password: { required: true, type: 'string' },
+    role: { type: 'string' }
+  }), async (req) => {
+    var { email, password, role } = req.body
+    var hash = await bcrypt.hash(password)
+    await db('users').insert({ email: email, password: hash, role: role || 'user' }).execute()
+    return { message: 'User created' }
+  })
 
-// Products Router
-const productsRouter = new Router();
+usersRouter.route('/:id')
+  .method('GET', auth(), async (req) => {
+    var user = await db('users').where('id', req.params.id).select('id,email,role').execute()
+    if (user.length == 0) {
+      return { error: 'User not found', code: 404 }
+    }
+    return user[0]
+  })
+  .method('PUT', auth(), validate({
+    email: { type: 'string' },
+    role: { type: 'string' }
+  }), async (req) => {
+    var { email, role } = req.body
+    var updateData = {}
+    if (email) updateData.email = email
+    if (role) updateData.role = role
+    await db('users').where('id', req.params.id).update(updateData).execute()
+    return { message: 'User updated' }
+  })
+  .method('DELETE', auth(['admin']), async (req) => {
+    await db('users').where('id', req.params.id).delete().execute()
+    return { message: 'User deleted' }
+  })
 
-productsRouter.get('/', async (req, res) => {
-  const products = await query('SELECT * FROM products');
-  res.json(products);
-});
+// Products CRUD
+var productsRouter = server.router('/api/products')
 
-productsRouter.post('/', auth(['admin']), validate({ name: { required: true }, price: { required: true, type: 'number' } }), async (req, res) => {
-  const { name, price } = req.body;
-  await query('INSERT INTO products (name, price) VALUES ($1, $2)', [name, price]);
-  res.json({ message: 'Product created' });
-});
+productsRouter.route('/')
+  .method('GET', cache({ ttl: 300 }), async (req) => {
+    return await db('products').select('*').execute()
+  })
+  .method('POST', auth(['admin']), validate({
+    name: { required: true, type: 'string' },
+    price: { required: true, type: 'number' },
+    description: { type: 'string' }
+  }), async (req) => {
+    var { name, price, description } = req.body
+    await db('products').insert({ name: name, price: price, description: description }).execute()
+    return { message: 'Product created' }
+  })
 
-// Mount routers
-server.use('/users', usersRouter);
-server.use('/products', productsRouter);
+productsRouter.route('/:id')
+  .method('GET', async (req) => {
+    var product = await db('products').where('id', req.params.id).execute()
+    if (product.length == 0) {
+      return { error: 'Product not found', code: 404 }
+    }
+    return product[0]
+  })
+  .method('PUT', auth(['admin']), validate({
+    name: { type: 'string' },
+    price: { type: 'number' },
+    description: { type: 'string' }
+  }), async (req) => {
+    var { name, price, description } = req.body
+    var updateData = {}
+    if (name) updateData.name = name
+    if (price) updateData.price = price
+    if (description) updateData.description = description
+    await db('products').where('id', req.params.id).update(updateData).execute()
+    return { message: 'Product updated' }
+  })
+  .method('DELETE', auth(['admin']), async (req) => {
+    await db('products').where('id', req.params.id).delete().execute()
+    return { message: 'Product deleted' }
+  })
 
-// Similar for cart and orders...
+// Orders CRUD (example)
+var ordersRouter = server.router('/api/orders')
+
+ordersRouter.route('/')
+  .method('GET', auth(), async (req) => {
+    return await db('orders').where('user_id', req.user.id).execute()
+  })
+  .method('POST', auth(), validate({
+    product_id: { required: true, type: 'number' },
+    quantity: { required: true, type: 'number' }
+  }), async (req) => {
+    var { product_id, quantity } = req.body
+    await db('orders').insert({ user_id: req.user.id, product_id: product_id, quantity: quantity }).execute()
+    return { message: 'Order created' }
+  })
 
 server.listen(3000, () => {
-  logger.info('Example server running on port 3000');
-});
+  logger.info('ZyloPress native server with full CRUD and auth running on port 3000')
+})

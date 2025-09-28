@@ -1,45 +1,40 @@
 // ZyloPress MongoDB Driver
-import { MongoClient } from 'mongodb';
+import { logger } from '../../utils.zylo'
 
-class MongoDBDriver implements DBDriver {
-  var client: Any = null
-  var db: Any = null
+class MongoDBDriver {
+  var connection: Any = null
+  var config: Map
 
   func connect(config: Map) -> Void {
-    var uri = config.DB_URI || 'mongodb://localhost:27017'
-    var dbName = config.DB_NAME || 'zylo_app'
-
-    this.client = new MongoClient(uri)
-    await this.client.connect()
-    this.db = this.client.db(dbName)
-
-    logger.info("Connected to MongoDB database: " + dbName)
+    this.config = config
+    this.connection = zylo.db.mongodb.connect(config.DB_URI)
+    logger.info('Connected to MongoDB database')
   }
 
-  func query(sql: String, params: List<Any>) -> List<Any> {
-    if (!this.db) {
-      throw Error("Database not connected")
+  func query(sql: String, params: List<Any>) -> List<Map> {
+    // For MongoDB, adapt SQL-like queries to MongoDB queries
+    // This is a simplified adaptation
+    var collection = sql.split('FROM')[1].trim().split(' ')[0]
+    var query = {}
+    // Parse WHERE conditions into MongoDB query
+    if (sql.contains('WHERE')) {
+      var whereClause = sql.split('WHERE')[1].split('ORDER')[0].trim()
+      // Simple parsing
+      query = { [params[0]]: params[1] }  // Assume simple equality
     }
-
-    // For MongoDB, sql is collection name, params is query object
-    var collection = this.db.collection(sql)
-    var query = params[0] || {}
-
-    // Convert to array for consistency with other drivers
-    var results = await collection.find(query).toArray()
-    return results
+    return this.connection.collection(collection).find(query).toArray()
   }
 
   func close() -> Void {
-    if (this.client) {
-      await this.client.close()
-      this.client = null
-      this.db = null
-      logger.info("MongoDB connection closed")
+    if (this.connection) {
+      this.connection.close()
+      logger.info('MongoDB connection closed')
     }
   }
 
   func getName() -> String {
-    return "MongoDB"
+    return 'MongoDB'
   }
 }
+
+export default MongoDBDriver

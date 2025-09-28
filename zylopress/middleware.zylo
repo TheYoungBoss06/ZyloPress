@@ -1,91 +1,185 @@
-// ZyloPress Middlewares
-import jwt from "zypress/security/jwt";
-import validator from "zypress/security/validator";
-import cors from "zypress/security/cors";
-import helmet from "zypress/security/helmet";
-import rateLimit from "zypress/security/rate-limit";
-import csrf from "zypress/security/csrf";
+// ZyloPress Middlewares - Native Zylo Security and Utilities
+import jwt from './security/jwt.zylo'
+import bcrypt from './security/bcrypt.zylo'
+import { logger, validate as validateInput } from './utils.zylo'
 
 // Authentication middleware
-const auth = (roles = []) => {
-  return (req, res, next) => {
-    const token = req.headers.authorization?.split(' ')[1];
+func auth(roles: List<String> = []) -> Function {
+  return (req: HttpRequest, res: HttpResponse, next: Function) -> Void {
+    var token = req.headers['authorization']?.replace('Bearer ', '')
     if (!token) {
-      return res.status(401).json({ error: 'No token provided' });
+      res.status(401).json({ error: 'No token provided', code: 401 })
+      return
     }
 
     try {
-      const decoded = jwt.verify(token);
-      req.user = decoded;
-      if (roles.length && !roles.includes(decoded.role)) {
-        return res.status(403).json({ error: 'Insufficient permissions' });
+      var decoded = jwt.verify(token)
+      req.user = decoded
+      if (roles.length > 0 && !roles.contains(decoded.role)) {
+        res.status(403).json({ error: 'Insufficient permissions', code: 403 })
+        return
       }
-      next();
+      next()
     } catch (err) {
-      res.status(401).json({ error: 'Invalid token' });
+      res.status(401).json({ error: 'Invalid token', code: 401 })
     }
-  };
-};
+  }
+}
 
 // Validation middleware
-const validate = (schema) => {
-  return (req, res, next) => {
-    const { error } = validator.validate(req.body, schema);
-    if (error) {
-      return res.status(400).json({ error: error.details[0].message });
+func validate(schema: Map) -> Function {
+  return (req: HttpRequest, res: HttpResponse, next: Function) -> Void {
+    var errors = validateInput(req.body, schema)
+    if (!errors.isValid) {
+      res.status(400).json({ error: 'Validation failed', details: errors.errors, code: 400 })
+      return
     }
-    next();
-  };
-};
+    next()
+  }
+}
 
-// Security middlewares
-const corsMiddleware = cors();
-const helmetMiddleware = helmet();
-const rateLimitMiddleware = rateLimit();
-const csrfMiddleware = csrf();
+// CORS middleware
+func cors(options: Map = {}) -> Function {
+  var allowedOrigins = options.allowedOrigins || ['*']
+  var allowedMethods = options.allowedMethods || ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']
+  var allowedHeaders = options.allowedHeaders || ['Content-Type', 'Authorization']
 
-// Error handling middleware
-const errorHandler = (err, req, res, next) => {
-  const timestamp = new Date().toISOString();
-  const route = `${req.method} ${req.url}`;
-  const errorType = err.name || 'Error';
+  return (req: HttpRequest, res: HttpResponse, next: Function) -> Void {
+    var origin = req.headers['origin']
+    if (allowedOrigins.contains('*') || allowedOrigins.contains(origin)) {
+      res.setHeader('Access-Control-Allow-Origin', origin || '*')
+    }
+    res.setHeader('Access-Control-Allow-Methods', allowedMethods.join(', '))
+    res.setHeader('Access-Control-Allow-Headers', allowedHeaders.join(', '))
+    res.setHeader('Access-Control-Allow-Credentials', 'true')
 
-  logger.error(`[${timestamp}] ${route} - ${errorType}: ${err.message}`);
+    if (req.method == 'OPTIONS') {
+      res.status(200).send('')
+      return
+    }
+    next()
+  }
+}
 
-  const status = err.status || 500;
-  const message = err.message || 'Internal Server Error';
+// Helmet middleware - Security headers
+func helmet(options: Map = {}) -> Function {
+  return (req: HttpRequest, res: HttpResponse, next: Function) -> Void {
+    res.setHeader('X-Content-Type-Options', 'nosniff')
+    res.setHeader('X-Frame-Options', 'DENY')
+    res.setHeader('X-XSS-Protection', '1; mode=block')
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
+    res.setHeader('Content-Security-Policy', "default-src 'self'")
+    next()
+  }
+}
 
-  res.status(status).json({
-    status,
-    error: message
-  });
-};
+// Rate limiting middleware
+var rateLimitStore: Map<String, Map> = {}
+
+func rateLimit(options: Map = {}) -> Function {
+  var windowMs = options.windowMs || 60000  // 1 minute
+  var maxRequests = options.max || 100
+
+  return (req: HttpRequest, res: HttpResponse, next: Function) -> Void {
+    var key = req.ip || 'unknown'
+    var now = zylo.time.now()
+    var windowStart = now - windowMs
+
+    if (!rateLimitStore[key]) {
+      rateLimitStore[key] = { requests: [], resetTime: now + windowMs }
+    }
+
+    var userData = rateLimitStore[key]
+    userData.requests = userData.requests.filter(time => time > windowStart)
+
+    if (userData.requests.length >= maxRequests) {
+      res.status(429).json({ error: 'Too many requests', code: 429 })
+      return
+    }
+
+    userData.requests.push(now)
+    res.setHeader('X-RateLimit-Limit', maxRequests.toString())
+    res.setHeader('X-RateLimit-Remaining', (maxRequests - userData.requests.length).toString())
+    next()
+  }
+}
+
+// CSRF protection middleware
+var csrfTokens: Map<String, String> = {}
+
+func csrf(options: Map = {}) -> Function {
+  return (req: HttpRequest, res: HttpResponse, next: Function) -> Void {
+    if (req.method == 'GET' || req.method == 'HEAD' || req.method == 'OPTIONS') {
+      next()
+      return
+    }
+
+    var token = req.headers['x-csrf-token'] || req.body._csrf
+    var sessionId = req.headers['session-id'] || 'default'
+
+    if (!csrfTokens[sessionId] || csrfTokens[sessionId] != token) {
+      res.status(403).json({ error: 'Invalid CSRF token', code: 403 })
+      return
+    }
+    next()
+  }
+}
+
+// Generate CSRF token
+func generateCsrfToken(sessionId: String = 'default') -> String {
+  var token = zylo.crypto.randomBytes(32).toString('hex')
+  csrfTokens[sessionId] = token
+  return token
+}
 
 // Cache middleware
-const cache = (options = {}) => {
-  const ttl = options.ttl || 60; // seconds
-  const cacheStore = new Map();
+var cacheStore: Map<String, Map> = {}
 
-  return (req, res, next) => {
-    if (req.method !== 'GET') return next();
+func cache(options: Map = {}) -> Function {
+  var ttl = options.ttl || 300  // 5 minutes
 
-    const key = req.url;
-    const cached = cacheStore.get(key);
-
-    if (cached && Date.now() < cached.expires) {
-      res.setHeader('X-Cache', 'HIT');
-      return res.json(cached.data);
+  return (req: HttpRequest, res: HttpResponse, next: Function) -> Void {
+    if (req.method != 'GET') {
+      next()
+      return
     }
 
-    res.setHeader('X-Cache', 'MISS');
-    const originalJson = res.json;
+    var key = req.url
+    var cached = cacheStore[key]
+
+    if (cached && zylo.time.now() < cached.expires) {
+      res.setHeader('X-Cache', 'HIT')
+      res.json(cached.data)
+      return
+    }
+
+    res.setHeader('X-Cache', 'MISS')
+    var originalJson = res.json
     res.json = (data) => {
-      cacheStore.set(key, { data, expires: Date.now() + ttl * 1000 });
-      originalJson.call(res, data);
-    };
+      cacheStore[key] = { data: data, expires: zylo.time.now() + ttl * 1000 }
+      originalJson(data)
+    }
 
-    next();
-  };
-};
+    next()
+  }
+}
 
-export { auth, validate, corsMiddleware, helmetMiddleware, rateLimitMiddleware, csrfMiddleware, errorHandler, cache };
+// Error handling middleware
+func errorHandler(err: Error, req: HttpRequest, res: HttpResponse) -> Void {
+  var timestamp = zylo.time.iso()
+  var route = req.method + ' ' + req.url
+  var errorType = err.name || 'Error'
+
+  logger.error('[' + timestamp + '] ' + route + ' - ' + errorType + ': ' + err.message)
+
+  var status = err.status || 500
+  var message = err.message || 'Internal Server Error'
+
+  res.status(status).json({
+    error: message,
+    code: status,
+    timestamp: timestamp
+  })
+}
+
+export { auth, validate, cors, helmet, rateLimit, csrf, generateCsrfToken, cache, errorHandler }
