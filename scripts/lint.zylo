@@ -1,12 +1,11 @@
-// Lint script - Check code quality
-import fs from 'fs';
-import path from 'path';
+// Lint script - Check Zylo code quality with ZPM
+import { zpm } from 'zpm';
 
-const lintFile = (filePath) => {
-  const content = fs.readFileSync(filePath, 'utf8');
+const lintFile = async (filePath) => {
+  const content = await zpm.fs.readFile(filePath, 'utf8');
   const errors = [];
 
-  // Basic checks
+  // Basic Zylo checks
   if (content.includes('console.log') && !filePath.includes('logger')) {
     errors.push('Avoid console.log, use logger instead');
   }
@@ -18,33 +17,37 @@ const lintFile = (filePath) => {
   return errors;
 };
 
-const lintDirectory = (dir) => {
-  const files = fs.readdirSync(dir);
+const lintDirectory = async (dir) => {
+  const files = await zpm.fs.readdir(dir);
   let totalErrors = 0;
 
-  files.forEach(file => {
-    const filePath = path.join(dir, file);
-    const stat = fs.statSync(filePath);
+  for (const file of files) {
+    const filePath = `${dir}/${file}`;
+    const stat = await zpm.fs.stat(filePath);
 
     if (stat.isDirectory() && !file.startsWith('.')) {
-      totalErrors += lintDirectory(filePath);
+      totalErrors += await lintDirectory(filePath);
     } else if (file.endsWith('.zylo')) {
-      const errors = lintFile(filePath);
+      const errors = await lintFile(filePath);
       if (errors.length > 0) {
         console.log(`Lint errors in ${filePath}:`);
         errors.forEach(error => console.log(`  - ${error}`));
         totalErrors += errors.length;
       }
     }
-  });
+  }
 
   return totalErrors;
 };
 
-const errors = lintDirectory('zylopress');
-if (errors === 0) {
-  console.log('Lint passed!');
-} else {
-  console.log(`Lint failed with ${errors} errors`);
-  process.exit(1);
-}
+const runLint = async () => {
+  const errors = await lintDirectory('zylopress');
+  if (errors === 0) {
+    console.log('Lint passed!');
+  } else {
+    console.log(`Lint failed with ${errors} errors`);
+    process.exit(1);
+  }
+};
+
+runLint();

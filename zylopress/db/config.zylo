@@ -1,0 +1,123 @@
+// ZyloPress Database Configuration
+// Flexible configuration system for multiple database types
+
+class DBConfig {
+  var config: Map
+
+  func init(config: Map = {}) {
+    this.config = this.mergeWithDefaults(config)
+    this.validateConfig()
+  }
+
+  func mergeWithDefaults(userConfig: Map) -> Map {
+    var defaults = {
+      DB_TYPE: 'postgres',
+      DB_HOST: 'localhost',
+      DB_PORT: 5432,
+      DB_NAME: 'zylo_app',
+      DB_USER: 'zylo_user',
+      DB_PASSWORD: 'secure_password',
+      DB_PATH: './database.sqlite',
+      DB_URI: 'mongodb://localhost:27017',
+      MAX_POOL: 20,
+      CONNECTION_TIMEOUT: 60000,
+      RETRY_ATTEMPTS: 3,
+      RETRY_DELAY: 5000
+    }
+
+    // Override with environment variables
+    var envConfig = this.loadFromEnvironment()
+
+    // Override with user provided config
+    return { ...defaults, ...envConfig, ...userConfig }
+  }
+
+  func loadFromEnvironment() -> Map {
+    return {
+      DB_TYPE: process.env.DB_TYPE,
+      DB_HOST: process.env.DB_HOST,
+      DB_PORT: process.env.DB_PORT ? parseInt(process.env.DB_PORT) : null,
+      DB_NAME: process.env.DB_NAME,
+      DB_USER: process.env.DB_USER,
+      DB_PASSWORD: process.env.DB_PASSWORD,
+      DB_PATH: process.env.DB_PATH,
+      DB_URI: process.env.DB_URI,
+      MAX_POOL: process.env.MAX_POOL ? parseInt(process.env.MAX_POOL) : null
+    }
+  }
+
+  func validateConfig() -> Void {
+    var requiredFields = ['DB_TYPE']
+
+    // Add type-specific required fields
+    switch this.config.DB_TYPE {
+      case 'postgres':
+      case 'mysql':
+        requiredFields.push('DB_HOST', 'DB_NAME', 'DB_USER', 'DB_PASSWORD')
+        break
+      case 'sqlite':
+        requiredFields.push('DB_PATH')
+        break
+      case 'mongodb':
+        requiredFields.push('DB_URI', 'DB_NAME')
+        break
+    }
+
+    for (field in requiredFields) {
+      if (!this.config[field]) {
+        throw Error("Missing required database configuration: " + field)
+      }
+    }
+
+    // Validate port ranges
+    if (this.config.DB_PORT && (this.config.DB_PORT < 1 || this.config.DB_PORT > 65535)) {
+      throw Error("Invalid port number: " + this.config.DB_PORT)
+    }
+
+    logger.info("Database configuration validated for " + this.config.DB_TYPE)
+  }
+
+  func getConfig() -> Map {
+    return this.config
+  }
+
+  func updateConfig(newConfig: Map) -> Void {
+    this.config = { ...this.config, ...newConfig }
+    this.validateConfig()
+    logger.info("Database configuration updated")
+  }
+}
+
+// Predefined configurations for common setups
+var configs = {
+  development: {
+    DB_TYPE: 'sqlite',
+    DB_PATH: './dev.db'
+  },
+
+  production_postgres: {
+    DB_TYPE: 'postgres',
+    DB_HOST: 'prod-db-host',
+    DB_PORT: 5432,
+    DB_NAME: 'prod_app',
+    DB_USER: 'prod_user',
+    DB_PASSWORD: process.env.DB_PASSWORD
+  },
+
+  production_mysql: {
+    DB_TYPE: 'mysql',
+    DB_HOST: 'prod-db-host',
+    DB_PORT: 3306,
+    DB_NAME: 'prod_app',
+    DB_USER: 'prod_user',
+    DB_PASSWORD: process.env.DB_PASSWORD
+  },
+
+  production_mongo: {
+    DB_TYPE: 'mongodb',
+    DB_URI: 'mongodb://prod-db-host:27017',
+    DB_NAME: 'prod_app'
+  }
+}
+
+export { DBConfig, configs }

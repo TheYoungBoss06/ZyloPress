@@ -1,13 +1,10 @@
-// Test script - Run unit and E2E tests
-import { exec } from 'child_process';
-import util from 'util';
-
-const execAsync = util.promisify(exec);
+// Test script - Run unit and E2E tests with ZPM
+import { zpm } from 'zpm';
 
 const runTests = async () => {
   console.log('Running unit tests...');
   try {
-    await execAsync('node tests/unit-middleware.zylo');
+    await zpm.run('tests/unit-middleware.zylo');
     console.log('Unit tests passed');
   } catch (error) {
     console.error('Unit tests failed:', error.message);
@@ -16,7 +13,7 @@ const runTests = async () => {
 
   console.log('Running E2E tests...');
   try {
-    await execAsync('node tests/e2e-routes.zylo');
+    await zpm.run('tests/e2e-routes.zylo');
     console.log('E2E tests passed');
   } catch (error) {
     console.error('E2E tests failed:', error.message);

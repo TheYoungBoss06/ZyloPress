@@ -1,33 +1,126 @@
-// ZyloPress Database Pool Module
-import pg from 'pg';
+// ZyloPress Database Pool - Multi-Database Support
+import { logger } from '../utils.zylo';
+import { selectDriver } from './drivers/interface.zylo';
 
-const { Pool } = pg;
+class DBPool {
+  var driver: DBDriver
+  var config: Map
+  var retryCount: Int = 0
+  var maxRetries: Int = 3
 
-const pool = new Pool({
-  host: process.env.DB_HOST || 'localhost',
-  port: process.env.DB_PORT || 5432,
-  database: process.env.DB_NAME || 'zylopress',
-  user: process.env.DB_USER || 'user',
-  password: process.env.DB_PASSWORD || 'password',
-  max: 20,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 2000,
-});
-
-const query = async (sql, params = []) => {
-  const client = await pool.connect();
-  try {
-    const res = await client.query(sql, params);
-    return res.rows;
-  } finally {
-    client.release();
+  func init(config: Map) {
+    this.config = config
+    this.driver = selectDriver(config.DB_TYPE || 'postgres')
+    this.connect()
   }
-};
 
-// Middleware for secure queries (placeholder)
-const secureQueryMiddleware = (req, res, next) => {
-  // Add logic to sanitize queries if needed
-  next();
-};
+  func connect() -> Void {
+    try {
+      this.driver.connect(this.config)
+      this.retryCount = 0
+      logger.info("Database connected successfully with " + this.driver.getName())
+    } catch (error) {
+      logger.error("Database connection failed:", error.message)
+      this.handleConnectionError(error)
+    }
+  }
 
-export { query, secureQueryMiddleware };
+  func handleConnectionError(error: Error) -> Void {
+    if (this.retryCount < this.maxRetries) {
+      this.retryCount++
+      logger.info("Retrying database connection in 5 seconds... (attempt " + this.retryCount + "/" + this.maxRetries + ")")
+      setTimeout(() => this.connect(), 5000)
+    } else {
+      throw Error("Failed to connect to database after " + this.maxRetries + " attempts")
+    }
+  }
+
+  func query(sql: String, params: List<Any> = []) -> List<Any> {
+    this.validateQuery(sql, params)
+    this.logQuery(sql, params)
+
+    try {
+      var result = await this.driver.query(sql, params)
+      logger.info("Query executed successfully")
+      return result
+    } catch (error) {
+      logger.error("Query execution failed:", error.message)
+      throw error
+    }
+  }
+
+  func validateQuery(sql: String, params: List<Any>) -> Void {
+    // Check for dangerous patterns
+    var dangerousPatterns = [
+      /(\b(DROP|DELETE|UPDATE|INSERT|ALTER|CREATE|TRUNCATE)\b.*\b(DATABASE|TABLE|INDEX|VIEW)\b)/i,
+      /(\bEXEC\b|\bEXECUTE\b|\bEVAL\b)/i,
+      /(-{2}|\/\*|\*\/)/,  // SQL comments that might hide malicious code
+      /(\bUNION\b.*\bSELECT\b)/i,
+      /(\bSCRIPT\b|\bJAVASCRIPT\b|\bFUNCTION\b)/i  // NoSQL injection patterns
+    ]
+
+    for (pattern in dangerousPatterns) {
+      if (pattern.test(sql)) {
+        logger.warn("Potentially dangerous query detected: " + sql)
+        throw Error("Query validation failed: potentially unsafe operation")
+      }
+    }
+
+    // Validate parameter count matches placeholders
+    var placeholderCount = (sql.match(/\?/g) || []).length + (sql.match(/\$[0-9]+/g) || []).length
+    if (placeholderCount !== params.length) {
+      throw Error("Parameter count mismatch: expected " + placeholderCount + ", got " + params.length)
+    }
+  }
+
+  func logQuery(sql: String, params: List<Any>) -> Void {
+    var sanitizedParams = params.map(param => {
+      if (typeof param === 'string' && param.length > 50) {
+        return param.substring(0, 50) + "..."
+      }
+      return param
+    })
+
+    logger.info("DB Query", {
+      sql: sql,
+      params: sanitizedParams,
+      timestamp: new Date().toISOString()
+    })
+  }
+
+  func close() -> Void {
+    if (this.driver) {
+      this.driver.close()
+    }
+  }
+
+  func getStats() -> Map {
+    return {
+      driver: this.driver.getName(),
+      connected: this.driver !== null,
+      retryCount: this.retryCount
+    }
+  }
+}
+
+// Factory function to create database instance
+func createDatabase(config: Map) -> DBPool {
+  var db = new DBPool()
+  db.init(config)
+  return db
+}
+
+// Export singleton instance based on environment
+var defaultConfig = {
+  DB_TYPE: process.env.DB_TYPE || 'postgres',
+  DB_HOST: process.env.DB_HOST || 'localhost',
+  DB_PORT: process.env.DB_PORT || 5432,
+  DB_NAME: process.env.DB_NAME || 'zylo_app',
+  DB_USER: process.env.DB_USER || 'zylo_user',
+  DB_PASSWORD: process.env.DB_PASSWORD || 'secure_password',
+  DB_PATH: process.env.DB_PATH || './database.sqlite',  // For SQLite
+  DB_URI: process.env.DB_URI || 'mongodb://localhost:27017',  // For MongoDB
+  MAX_POOL: process.env.MAX_POOL || 20
+}
+
+export { DBPool, createDatabase, defaultConfig }

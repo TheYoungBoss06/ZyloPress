@@ -1,0 +1,45 @@
+// ZyloPress MongoDB Driver
+import { MongoClient } from 'mongodb';
+
+class MongoDBDriver implements DBDriver {
+  var client: Any = null
+  var db: Any = null
+
+  func connect(config: Map) -> Void {
+    var uri = config.DB_URI || 'mongodb://localhost:27017'
+    var dbName = config.DB_NAME || 'zylo_app'
+
+    this.client = new MongoClient(uri)
+    await this.client.connect()
+    this.db = this.client.db(dbName)
+
+    logger.info("Connected to MongoDB database: " + dbName)
+  }
+
+  func query(sql: String, params: List<Any>) -> List<Any> {
+    if (!this.db) {
+      throw Error("Database not connected")
+    }
+
+    // For MongoDB, sql is collection name, params is query object
+    var collection = this.db.collection(sql)
+    var query = params[0] || {}
+
+    // Convert to array for consistency with other drivers
+    var results = await collection.find(query).toArray()
+    return results
+  }
+
+  func close() -> Void {
+    if (this.client) {
+      await this.client.close()
+      this.client = null
+      this.db = null
+      logger.info("MongoDB connection closed")
+    }
+  }
+
+  func getName() -> String {
+    return "MongoDB"
+  }
+}

@@ -1,0 +1,30 @@
+// ZyloPress Database Module - Main Export
+// Agnostic database support for multiple engines
+
+import { DBPool, createDatabase, defaultConfig } from './pool.zylo';
+import { DBConfig, configs } from './config.zylo';
+
+// Create default database instance
+var db = createDatabase(defaultConfig)
+
+// Export everything needed for database operations
+export {
+  db,                    // Default database instance
+  DBPool,               // Database pool class
+  createDatabase,       // Factory function for custom databases
+  DBConfig,            // Configuration class
+  configs,             // Predefined configurations
+  defaultConfig        // Default configuration
+}
+
+// Convenience functions
+func getDBStats() -> Map {
+  return db.getStats()
+}
+
+func closeDB() -> Void {
+  db.close()
+}
+
+// Export for easy importing
+export default db

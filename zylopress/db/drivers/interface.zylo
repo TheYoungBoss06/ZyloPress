@@ -1,0 +1,32 @@
+// ZyloPress Database Driver Interface
+// Generic interface for all database drivers
+
+interface DBDriver {
+  // Connect to the database
+  connect(config: Map) -> Void
+
+  // Execute a query with parameters
+  query(sql: String, params: List<Any>) -> List<Any>
+
+  // Close the database connection
+  close() -> Void
+
+  // Get driver name
+  getName() -> String
+}
+
+// Utility function to select the appropriate driver
+func selectDriver(type: String) -> DBDriver {
+  switch type {
+    case "postgres":
+      return new PostgresDriver()
+    case "mysql":
+      return new MySQLDriver()
+    case "sqlite":
+      return new SQLiteDriver()
+    case "mongodb":
+      return new MongoDBDriver()
+    default:
+      throw Error("Unsupported database type: " + type)
+  }
+}

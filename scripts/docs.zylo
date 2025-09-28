@@ -1,18 +1,22 @@
-// Docs script - Generate API documentation
-import fs from 'fs';
+// Docs script - Generate API documentation with ZPM
+import { zpm } from 'zpm';
 import app from '../zylopress/zylopress.zylo';
 import { generateDocs } from '../zylopress/utils.zylo';
 
-// Create a dummy app to generate docs
-const dummyApp = app();
-dummyApp.get('/users', () => {});
-dummyApp.post('/users', () => {});
-dummyApp.get('/products', () => {});
+const generateDocumentation = async () => {
+  // Create a dummy app to generate docs
+  const dummyApp = app();
+  dummyApp.get('/users', () => {});
+  dummyApp.post('/users', () => {});
+  dummyApp.get('/products', () => {});
 
-const docs = generateDocs(dummyApp);
+  const docs = generateDocs(dummyApp);
 
-// Write to docs/api.json
-fs.mkdirSync('docs', { recursive: true });
-fs.writeFileSync('docs/api.json', JSON.stringify(docs, null, 2));
+  // Use ZPM file system to write docs
+  await zpm.fs.writeFile('docs/api.json', JSON.stringify(docs, null, 2));
+  await zpm.fs.mkdir('docs', { recursive: true });
 
-console.log('API documentation generated at docs/api.json');
+  console.log('API documentation generated at docs/api.json');
+};
+
+generateDocumentation();

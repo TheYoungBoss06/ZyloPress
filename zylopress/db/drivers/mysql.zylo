@@ -1,0 +1,43 @@
+// ZyloPress MySQL Driver
+import mysql from 'mysql2/promise';
+
+class MySQLDriver implements DBDriver {
+  var pool: Any = null
+
+  func connect(config: Map) -> Void {
+    var poolConfig = {
+      host: config.DB_HOST || 'localhost',
+      port: config.DB_PORT || 3306,
+      database: config.DB_NAME || 'zylo_app',
+      user: config.DB_USER || 'zylo_user',
+      password: config.DB_PASSWORD || 'secure_password',
+      connectionLimit: config.MAX_POOL || 20,
+      acquireTimeout: 60000,
+      timeout: 60000
+    }
+
+    this.pool = mysql.createPool(poolConfig)
+    logger.info("Connected to MySQL database: " + config.DB_NAME)
+  }
+
+  func query(sql: String, params: List<Any>) -> List<Any> {
+    if (!this.pool) {
+      throw Error("Database not connected")
+    }
+
+    var [rows] = await this.pool.execute(sql, params)
+    return rows
+  }
+
+  func close() -> Void {
+    if (this.pool) {
+      await this.pool.end()
+      this.pool = null
+      logger.info("MySQL connection closed")
+    }
+  }
+
+  func getName() -> String {
+    return "MySQL"
+  }
+}
