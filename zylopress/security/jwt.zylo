@@ -1,0 +1,38 @@
+// ZyloPress JWT Security Module
+import crypto from 'crypto';
+
+const secret = process.env.JWT_SECRET || 'default_secret';
+
+const sign = (payload, expiresIn = '1h') => {
+  const header = { alg: 'HS256', typ: 'JWT' };
+  const now = Math.floor(Date.now() / 1000);
+  const exp = now + (expiresIn === '1h' ? 3600 : 86400); // simple, assume '1h' or '24h'
+  const fullPayload = { ...payload, iat: now, exp };
+
+  const encodedHeader = Buffer.from(JSON.stringify(header)).toString('base64url');
+  const encodedPayload = Buffer.from(JSON.stringify(fullPayload)).toString('base64url');
+
+  const data = `${encodedHeader}.${encodedPayload}`;
+  const signature = crypto.createHmac('sha256', secret).update(data).digest('base64url');
+
+  return `${data}.${signature}`;
+};
+
+const verify = (token) => {
+  const parts = token.split('.');
+  if (parts.length !== 3) throw new Error('Invalid token');
+
+  const [encodedHeader, encodedPayload, signature] = parts;
+  const data = `${encodedHeader}.${encodedPayload}`;
+  const expectedSignature = crypto.createHmac('sha256', secret).update(data).digest('base64url');
+
+  if (signature !== expectedSignature) throw new Error('Invalid signature');
+
+  const payload = JSON.parse(Buffer.from(encodedPayload, 'base64url').toString());
+  const now = Math.floor(Date.now() / 1000);
+  if (payload.exp < now) throw new Error('Token expired');
+
+  return payload;
+};
+
+export { sign, verify };

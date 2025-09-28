@@ -1,0 +1,29 @@
+// Test script - Run unit and E2E tests
+import { exec } from 'child_process';
+import util from 'util';
+
+const execAsync = util.promisify(exec);
+
+const runTests = async () => {
+  console.log('Running unit tests...');
+  try {
+    await execAsync('node tests/unit-middleware.zylo');
+    console.log('Unit tests passed');
+  } catch (error) {
+    console.error('Unit tests failed:', error.message);
+    process.exit(1);
+  }
+
+  console.log('Running E2E tests...');
+  try {
+    await execAsync('node tests/e2e-routes.zylo');
+    console.log('E2E tests passed');
+  } catch (error) {
+    console.error('E2E tests failed:', error.message);
+    process.exit(1);
+  }
+
+  console.log('All tests passed!');
+};
+
+runTests();

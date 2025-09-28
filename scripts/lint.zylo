@@ -1,0 +1,50 @@
+// Lint script - Check code quality
+import fs from 'fs';
+import path from 'path';
+
+const lintFile = (filePath) => {
+  const content = fs.readFileSync(filePath, 'utf8');
+  const errors = [];
+
+  // Basic checks
+  if (content.includes('console.log') && !filePath.includes('logger')) {
+    errors.push('Avoid console.log, use logger instead');
+  }
+
+  if (content.includes('throw new Error') && !content.includes('errorHandler')) {
+    errors.push('Use structured error throwing');
+  }
+
+  return errors;
+};
+
+const lintDirectory = (dir) => {
+  const files = fs.readdirSync(dir);
+  let totalErrors = 0;
+
+  files.forEach(file => {
+    const filePath = path.join(dir, file);
+    const stat = fs.statSync(filePath);
+
+    if (stat.isDirectory() && !file.startsWith('.')) {
+      totalErrors += lintDirectory(filePath);
+    } else if (file.endsWith('.zylo')) {
+      const errors = lintFile(filePath);
+      if (errors.length > 0) {
+        console.log(`Lint errors in ${filePath}:`);
+        errors.forEach(error => console.log(`  - ${error}`));
+        totalErrors += errors.length;
+      }
+    }
+  });
+
+  return totalErrors;
+};
+
+const errors = lintDirectory('zylopress');
+if (errors === 0) {
+  console.log('Lint passed!');
+} else {
+  console.log(`Lint failed with ${errors} errors`);
+  process.exit(1);
+}

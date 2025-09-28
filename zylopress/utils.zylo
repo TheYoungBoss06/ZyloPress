@@ -1,0 +1,66 @@
+// ZyloPress Utils Module
+
+// Logger
+const logger = {
+  info: (msg) => console.log(`[INFO] ${new Date().toISOString()}: ${msg}`),
+  error: (msg) => console.error(`[ERROR] ${new Date().toISOString()}: ${msg}`),
+  warn: (msg) => console.warn(`[WARN] ${new Date().toISOString()}: ${msg}`),
+};
+
+// Simple Validator (since validator is imported, but implement basic)
+const validate = (data, rules) => {
+  const errors = [];
+  for (const [field, rule] of Object.entries(rules)) {
+    if (rule.required && !data[field]) {
+      errors.push(`${field} is required`);
+    }
+    if (rule.type && typeof data[field] !== rule.type) {
+      errors.push(`${field} must be ${rule.type}`);
+    }
+    if (rule.minLength && data[field].length < rule.minLength) {
+      errors.push(`${field} must be at least ${rule.minLength} characters`);
+    }
+  }
+  return { isValid: errors.length === 0, errors };
+};
+
+// HAST Helpers for generating safe HTML
+const escapeHtml = (text) => {
+  return text.replace(/[&<>"']/g, (char) => {
+    const map = { '&': '&', '<': '<', '>': '>', '"': '"', "'": ''' };
+    return map[char];
+  });
+};
+
+const h = (tag, attrs = {}, children = []) => {
+  const attrStr = Object.entries(attrs).map(([k, v]) => ` ${k}="${escapeHtml(v)}"`).join('');
+  const childStr = children.map(c => typeof c === 'string' ? escapeHtml(c) : c).join('');
+  return `<${tag}${attrStr}>${childStr}</${tag}>`;
+};
+
+const div = (attrs, children) => h('div', attrs, children);
+const p = (attrs, children) => h('p', attrs, children);
+const span = (attrs, children) => h('span', attrs, children);
+
+// Generate API documentation
+const generateDocs = (app) => {
+  const docs = {
+    openapi: '3.0.0',
+    info: { title: 'ZyloPress API', version: '1.0.0' },
+    paths: {}
+  };
+
+  Object.keys(app.routes).forEach(routeKey => {
+    const [method, path] = routeKey.split(' ');
+    if (!docs.paths[path]) docs.paths[path] = {};
+    docs.paths[path][method.toLowerCase()] = {
+      responses: {
+        200: { description: 'Success' }
+      }
+    };
+  });
+
+  return docs;
+};
+
+export { logger, validate, h, div, p, span, generateDocs };

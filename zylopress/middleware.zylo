@@ -1,0 +1,91 @@
+// ZyloPress Middlewares
+import jwt from "zypress/security/jwt";
+import validator from "zypress/security/validator";
+import cors from "zypress/security/cors";
+import helmet from "zypress/security/helmet";
+import rateLimit from "zypress/security/rate-limit";
+import csrf from "zypress/security/csrf";
+
+// Authentication middleware
+const auth = (roles = []) => {
+  return (req, res, next) => {
+    const token = req.headers.authorization?.split(' ')[1];
+    if (!token) {
+      return res.status(401).json({ error: 'No token provided' });
+    }
+
+    try {
+      const decoded = jwt.verify(token);
+      req.user = decoded;
+      if (roles.length && !roles.includes(decoded.role)) {
+        return res.status(403).json({ error: 'Insufficient permissions' });
+      }
+      next();
+    } catch (err) {
+      res.status(401).json({ error: 'Invalid token' });
+    }
+  };
+};
+
+// Validation middleware
+const validate = (schema) => {
+  return (req, res, next) => {
+    const { error } = validator.validate(req.body, schema);
+    if (error) {
+      return res.status(400).json({ error: error.details[0].message });
+    }
+    next();
+  };
+};
+
+// Security middlewares
+const corsMiddleware = cors();
+const helmetMiddleware = helmet();
+const rateLimitMiddleware = rateLimit();
+const csrfMiddleware = csrf();
+
+// Error handling middleware
+const errorHandler = (err, req, res, next) => {
+  const timestamp = new Date().toISOString();
+  const route = `${req.method} ${req.url}`;
+  const errorType = err.name || 'Error';
+
+  logger.error(`[${timestamp}] ${route} - ${errorType}: ${err.message}`);
+
+  const status = err.status || 500;
+  const message = err.message || 'Internal Server Error';
+
+  res.status(status).json({
+    status,
+    error: message
+  });
+};
+
+// Cache middleware
+const cache = (options = {}) => {
+  const ttl = options.ttl || 60; // seconds
+  const cacheStore = new Map();
+
+  return (req, res, next) => {
+    if (req.method !== 'GET') return next();
+
+    const key = req.url;
+    const cached = cacheStore.get(key);
+
+    if (cached && Date.now() < cached.expires) {
+      res.setHeader('X-Cache', 'HIT');
+      return res.json(cached.data);
+    }
+
+    res.setHeader('X-Cache', 'MISS');
+    const originalJson = res.json;
+    res.json = (data) => {
+      cacheStore.set(key, { data, expires: Date.now() + ttl * 1000 });
+      originalJson.call(res, data);
+    };
+
+    next();
+  };
+};
+
+export { auth, validate, corsMiddleware, helmetMiddleware, rateLimitMiddleware, csrfMiddleware, errorHandler, cache };

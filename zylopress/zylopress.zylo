@@ -1,0 +1,106 @@
+// ZyloPress - Main application module
+import http from 'http';
+import Router from './router.zylo';
+import { logger, generateDocs } from './utils.zylo';
+import { errorHandler } from './middleware.zylo';
+
+const app = () => {
+  const routes = {};
+  const globalMiddlewares = [];
+  let server;
+
+  const get = (path, ...handlers) => {
+    routes[`GET ${path}`] = handlers;
+  };
+
+  const post = (path, ...handlers) => {
+    routes[`POST ${path}`] = handlers;
+  };
+
+  const put = (path, ...handlers) => {
+    routes[`PUT ${path}`] = handlers;
+  };
+
+  const delete = (path, ...handlers) => {
+    routes[`DELETE ${path}`] = handlers;
+  };
+
+  const use = (arg1, arg2) => {
+    if (typeof arg1 === 'string' && arg2) {
+      // path and router/middleware
+      const prefix = arg1;
+      if (typeof arg2 === 'function') {
+        // middleware for path
+        // For simplicity, add to global or handle per route
+        globalMiddlewares.push(arg2);
+      } else if (arg2 && typeof arg2 === 'object' && arg2.routes) {
+        // Router with prefix
+        Object.keys(arg2.routes).forEach(key => {
+          const [method, path] = key.split(' ');
+          const fullKey = `${method} ${prefix}${path}`;
+          routes[fullKey] = arg2.routes[key];
+        });
+      }
+    } else if (typeof arg1 === 'function') {
+      globalMiddlewares.push(arg1);
+    } else if (arg1 && typeof arg1 === 'object' && arg1.routes) {
+      // Router without prefix
+      Object.keys(arg1.routes).forEach(key => {
+        routes[key] = arg1.routes[key];
+      });
+    }
+  };
+
+  const listen = (port, callback) => {
+    server = http.createServer(async (req, res) => {
+      try {
+        // Enhance response object
+        res.json = (obj) => {
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify(obj));
+        };
+        res.status = (code) => {
+          res.statusCode = code;
+          return res;
+        };
+        res.send = (text) => {
+          res.end(text);
+        };
+
+        // Apply global middlewares
+        for (const middleware of globalMiddlewares) {
+          await middleware(req, res);
+        }
+
+        const routeKey = `${req.method} ${req.url}`;
+        const handlers = routes[routeKey];
+
+        if (handlers) {
+          for (const handler of handlers) {
+            await handler(req, res);
+          }
+        } else if (req.url === '/docs') {
+          const docs = generateDocs({ routes });
+          res.json(docs);
+        } else {
+          res.status(404).json({ error: 'Not Found' });
+        }
+
+        // Log request
+        logger.info(`${req.method} ${req.url} - ${res.statusCode}`);
+      } catch (err) {
+        errorHandler(err, req, res, () => {});
+      }
+    });
+    });
+
+    server.listen(port, () => {
+      logger.info(`ZyloPress server listening on port ${port}`);
+      if (callback) callback();
+    });
+  };
+
+  return { get, post, put, delete, use, listen };
+};
+
+export default app;

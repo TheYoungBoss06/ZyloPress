@@ -1,0 +1,33 @@
+// ZyloPress Database Pool Module
+import pg from 'pg';
+
+const { Pool } = pg;
+
+const pool = new Pool({
+  host: process.env.DB_HOST || 'localhost',
+  port: process.env.DB_PORT || 5432,
+  database: process.env.DB_NAME || 'zylopress',
+  user: process.env.DB_USER || 'user',
+  password: process.env.DB_PASSWORD || 'password',
+  max: 20,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 2000,
+});
+
+const query = async (sql, params = []) => {
+  const client = await pool.connect();
+  try {
+    const res = await client.query(sql, params);
+    return res.rows;
+  } finally {
+    client.release();
+  }
+};
+
+// Middleware for secure queries (placeholder)
+const secureQueryMiddleware = (req, res, next) => {
+  // Add logic to sanitize queries if needed
+  next();
+};
+
+export { query, secureQueryMiddleware };

@@ -1,0 +1,18 @@
+// Docs script - Generate API documentation
+import fs from 'fs';
+import app from '../zylopress/zylopress.zylo';
+import { generateDocs } from '../zylopress/utils.zylo';
+
+// Create a dummy app to generate docs
+const dummyApp = app();
+dummyApp.get('/users', () => {});
+dummyApp.post('/users', () => {});
+dummyApp.get('/products', () => {});
+
+const docs = generateDocs(dummyApp);
+
+// Write to docs/api.json
+fs.mkdirSync('docs', { recursive: true });
+fs.writeFileSync('docs/api.json', JSON.stringify(docs, null, 2));
+
+console.log('API documentation generated at docs/api.json');

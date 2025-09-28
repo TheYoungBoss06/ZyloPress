@@ -1,0 +1,73 @@
+// E2E tests for routes
+import app from '../zylopress/zylopress.zylo';
+import http from 'http';
+
+const testApp = app();
+
+testApp.get('/test', (req, res) => {
+  res.json({ message: 'Hello Test' });
+});
+
+testApp.get('/error', (req, res) => {
+  throw new Error('Test error');
+});
+
+// Helper to make requests
+const makeRequest = (path, method = 'GET') => {
+  return new Promise((resolve) => {
+    const req = http.request({
+      hostname: 'localhost',
+      port: 3001,
+      path,
+      method
+    }, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        resolve({ status: res.statusCode, data: JSON.parse(data) });
+      });
+    });
+    req.end();
+  });
+};
+
+const runE2ETests = async () => {
+  console.log('Starting E2E tests...');
+
+  // Start test server
+  testApp.listen(3001, () => {
+    console.log('Test server started');
+  });
+
+  // Wait a bit
+  await new Promise(resolve => setTimeout(resolve, 100));
+
+  // Test successful route
+  const response1 = await makeRequest('/test');
+  if (response1.status === 200 && response1.data.message === 'Hello Test') {
+    console.log('✓ GET /test returns correct response');
+  } else {
+    console.log('✗ GET /test failed', response1);
+  }
+
+  // Test 404
+  const response2 = await makeRequest('/notfound');
+  if (response2.status === 404) {
+    console.log('✓ GET /notfound returns 404');
+  } else {
+    console.log('✗ GET /notfound should return 404', response2);
+  }
+
+  // Test error handling
+  const response3 = await makeRequest('/error');
+  if (response3.status === 500 && response3.data.error) {
+    console.log('✓ GET /error handled properly');
+  } else {
+    console.log('✗ GET /error should be handled', response3);
+  }
+
+  // Close server
+  process.exit(0);
+};
+
+runE2ETests();

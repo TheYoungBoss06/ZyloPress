@@ -1,0 +1,65 @@
+// Example ZyloPress Backend
+import app from '../zylopress/zylopress.zylo';
+import Router from '../zylopress/router.zylo';
+import { auth, validate, corsMiddleware, helmetMiddleware, rateLimitMiddleware } from '../zylopress/middleware.zylo';
+import { jwt } from '../zylopress/security/jwt.zylo';
+import { hash, compare } from '../zylopress/security/bcrypt.zylo';
+import { query } from '../zylopress/db/pool.zylo';
+import { logger } from '../zylopress/utils.zylo';
+
+const server = app();
+
+// Global middlewares
+server.use(corsMiddleware);
+server.use(helmetMiddleware);
+server.use(rateLimitMiddleware);
+
+// Users Router
+const usersRouter = new Router();
+
+usersRouter.post('/register', async (req, res) => {
+  const { email, password } = req.body;
+  const hashedPassword = await hash(password);
+  await query('INSERT INTO users (email, password) VALUES ($1, $2)', [email, hashedPassword]);
+  res.json({ message: 'User registered' });
+});
+
+usersRouter.post('/login', async (req, res) => {
+  const { email, password } = req.body;
+  const users = await query('SELECT * FROM users WHERE email = $1', [email]);
+  if (users.length && await compare(password, users[0].password)) {
+    const token = jwt.sign({ id: users[0].id, role: 'user' });
+    res.json({ token });
+  } else {
+    res.status(401).json({ error: 'Invalid credentials' });
+  }
+});
+
+usersRouter.get('/profile', auth(), async (req, res) => {
+  const user = await query('SELECT id, email FROM users WHERE id = $1', [req.user.id]);
+  res.json(user[0]);
+});
+
+// Products Router
+const productsRouter = new Router();
+
+productsRouter.get('/', async (req, res) => {
+  const products = await query('SELECT * FROM products');
+  res.json(products);
+});
+
+productsRouter.post('/', auth(['admin']), validate({ name: { required: true }, price: { required: true, type: 'number' } }), async (req, res) => {
+  const { name, price } = req.body;
+  await query('INSERT INTO products (name, price) VALUES ($1, $2)', [name, price]);
+  res.json({ message: 'Product created' });
+});
+
+// Mount routers
+server.use('/users', usersRouter);
+server.use('/products', productsRouter);
+
+// Similar for cart and orders...
+
+server.listen(3000, () => {
+  logger.info('Example server running on port 3000');
+});

@@ -1,0 +1,39 @@
+// ZyloPress Router - Modular routing
+class Router {
+  constructor() {
+    this.routes = {};
+    this.middlewares = [];
+  }
+
+  get(path, ...handlers) {
+    this.routes[`GET ${path}`] = handlers;
+  }
+
+  post(path, ...handlers) {
+    this.routes[`POST ${path}`] = handlers;
+  }
+
+  put(path, ...handlers) {
+    this.routes[`PUT ${path}`] = handlers;
+  }
+
+  delete(path, ...handlers) {
+    this.routes[`DELETE ${path}`] = handlers;
+  }
+
+  use(middleware) {
+    this.middlewares.push(middleware);
+  }
+
+  // Method to apply router to app with prefix
+  applyTo(app, prefix = '') {
+    Object.keys(this.routes).forEach(key => {
+      const [method, path] = key.split(' ');
+      const fullPath = prefix + path;
+      const handlers = this.routes[key];
+      app[method.toLowerCase()](fullPath, ...this.middlewares, ...handlers);
+    });
+  }
+}
+
+export default Router;
